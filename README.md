@@ -11,3 +11,9 @@ We will be tackling this using two approaches.
 
 1. A genome scan of lab-based re-selection experiments
 2. QTL mapping.
+
+##Contents of subdirectories
+
+`genomeScan/`
+
+Materials related to the genome scan part of the project.
