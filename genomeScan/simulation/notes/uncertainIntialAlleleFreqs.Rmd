@@ -1,0 +1,217 @@
+---
+title: "Simulating uncertainty in allele frequencies"
+author: "Nick Miller"
+output:
+  html_document:
+    theme: cerulean
+  pdf_document: default
+---
+
+#The Problem
+
+We will be simulating genetic drift in our colonies for each RAD-Seq locus, based on estimated *Ne* from microsatellites. The snag is that we will have an estimate of the starting allele frequency, based on a sample, but there is still some uncertainty about the true allele frequency. We want to incorporate this into our simulations.
+
+#A bialleleic locus.
+
+For a simple bialleleic locus, We are doing binomial sampling of the allele. Let's suppose we genotype 50 individuals (100 genes) and the true frequency of the more common allele is 0.6.
+
+Generate an example:
+
+```{r biallelic_sample}
+obs <- rbinom(1, 100, 0.6)
+obs
+```
+
+A quick plot of the likelihood function and take a look at what the curve function actually plots - it suggests a way to do what we are aiming for
+
+```{r plot_like}
+lk <- curve(dbinom(obs, 100, x), xlab="p", ylab="likelihood", lwd=2, col='blue')
+lk
+```
+
+An easy way to simulate with uncertainty about our true allele frequencies would be to generate a sequence of possible allele frequences from 0 to 1, calculate the likelihoods, scale so they sum to one and use them as probabilities in the sample() function. This isn't perfect because our sampled allele frequencies can only come from the sequence we generate. I don't think that's terrible, provided our sequence is sufficiently granular (I'm going to pull increments of 0.001 out of thin are as reasobable!)
+
+
+
+```{r}
+freq <- seq(from = 0, to = 1, by = 0.001)
+#use mapply because freq is not the first argument to dbinom
+prb <- mapply(dbinom, rep(obs, length(freq)), rep(100, length(freq)), freq)
+prb <- prb / sum(prb)
+prb <- prb / sum(prb)
+sum(prb)
+```
+Now try different numbers of simulated allele frequencies and compare to the likelihood to see how things look.
+
+```{r}
+for (samsize in c(100, 1000, 5000, 10000)){
+  h <- hist(sample(freq, samsize, prob = prb, replace =T), 
+            breaks=seq(from=0, to=1, by=0.01), 
+            col=colors()[399], 
+            xlab="p", 
+            ylab="count", 
+            main=paste(samsize, "runs"))
+  curve(dbinom(obs, 100, x)*sum(h$counts), 
+        from = 0, to = 1, 
+        n = length(h$breaks), 
+        add=T, 
+        lwd=3, 
+        col=colors()[556])
+}
+```
+
+This seems to work OK. We will probably want to do >= 1000 runs per RAD-Seq locus.
+
+#Multiple alleles
+
+Our RAD-Seq loci will have at least 2 alleles (i.e. 1 SNP), but loci with >1 SNP can hopefully be resolved into haplotypes, giving us >2 alleles. We will want to be able to handle that too.
+
+The general approach would be to take each allele in turn, and use the same approach as described above. To draw a set of allele frequencies, draw individual allele frequencies until we have drawn *number_of_alleles* - 1 frequencies, then set the last frequency so that the total sums to 1. We will probably want to randomise the order in which we draw the individual allele frequencies.
+
+##An example
+
+Let's start simple with a biallelic locus with trua allele frequencies of *p~1~* = 0.2, *p~2~* = 0.2. First simulate a sample of 100 genes from a population.
+
+```{r sample_counts}
+count.1 <- rbinom(1, 100, 0.8)
+count.2 <- 100 - count.1
+
+count.1
+count.2
+
+```
+Plot the likelihood curves for both alleles
+
+```{r plot_lik_curves}
+curve(dbinom(count.1, 100, x), xlab="p", ylab="likelihood", lwd=2, col='blue')
+curve(dbinom(count.2, 100, x), xlab="p", ylab="likelihood", lwd=2, col='red', add=T)
+
+```
+
+Extending the approach taken for a single allele, we will want a way to bundle together the possible allele frequencies and associated probabilities. A list is an obvious way to do this. The function below returns a list of frequencies and probabilities for a single allele.
+
+```{r def_get_freq_probs}
+get_freq_probs <- function(count,
+                           total,
+                           increment){
+  
+  freq <- seq(from = 0, to = 1, by = increment)
+  prb <- mapply(dbinom, rep(count, length(freq)), rep(total, length(freq)), freq)
+  prb <- prb / sum(prb)
+  list(freq = freq, prb = prb)
+}
+```
+Next we will want to get the frequency / probability pairings for each allele. Plot to make sure everything is still behaving itself.
+
+```{r test_get_freq_probs}
+a.1 <- get_freq_probs(count.1, 100, 0.001)
+a.2 <- get_freq_probs(count.2, 100, 0.001)
+plot(a.1$freq, 
+     a.1$prb, 
+     type = 'l', 
+     lwd = 2, 
+     col = 'blue', 
+     xlab = 'frequency', 
+     ylab = 'probability')
+lines(a.2$freq, 
+      a.2$prb, 
+      lwd = 2, 
+      col = 'red')
+sum(a.1$prb)
+sum(a.2$prb)
+
+```
+
+Now bundle the alleles together in a list of lists we can feed to a sampling function
+
+```{r make_allele_list}
+alleles <- list(a.1, a.2)
+
+```
+Define a sampling function that will generate a set of allele frequencies drawn at 
+random from their respective probability distributions.
+
+```{r def_sample_freqs}
+sample_freqs <- function(alleles){
+  
+  #randomize the order 
+  indices <- sample(1:length(alleles))
+  #a home for the frequencies to go
+  frequencies <- rep(0.0, length(alleles))
+  #work through all but the last index in the randomised list
+  for (i in indices[-length(indices)]){
+    frequencies[i] <- sample(alleles[[i]]$freq, size = 1, prob = alleles[[i]]$prb)
+  }
+  #make frequencies sum to 1
+  frequencies[indices[length(indices)]] <- 1 - sum(frequencies)
+  return(frequencies)
+}
+```
+
+Next, we want a function that will return a matrix of generated allele frequencies so we can get a decent sample of simulated values.
+
+```{r def_freq_set}
+freq_set <- function(alleles, size){
+  freqs <- double()
+  for (i in 1:size){
+    freqs <- c(freqs, sample_freqs(alleles))
+  }
+  matrix(freqs, nrow = size, byrow = T)
+}
+```
+
+Do 10000 simulated values
+
+```{r generate_simulated_allele_frequency_set}
+sim.values <- freq_set (alleles, size = 10000)
+
+```
+
+Plot simulated frequency ditributions and scaled likelihood curves for comparison.
+
+```{r plot_sim_freqs_likes}
+h <- hist(sim.values[,1], 
+          breaks = seq(from = 0, to = 1, by = 0.01), 
+          xlim = c(0, 1), 
+          col = colors()[399], 
+          main = "", 
+          xlab = "p")
+
+curve(dbinom(count.1, 100, x) * sum(h$counts), 
+      from = 0, to = 1, 
+      n = length(h$breaks), 
+      add = T, 
+      col = 'blue', 
+      lwd = 2)
+
+h <- hist(sim.values[,2], 
+          breaks = seq(from = 0, to = 1, by = 0.01), 
+          xlim = c(0, 1), 
+          col = colors()[373], 
+          add = T)
+
+curve(dbinom(count.2, 100, x) * sum(h$counts), 
+      from = 0, to = 1, 
+      n = length(h$breaks), 
+      add = T, 
+      col = colors()[507], 
+      lwd = 2)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
