@@ -1,6 +1,7 @@
 __author__ = 'nick'
 
 import numpy as np
+import scipy.stats as st
 
 class singleAllele:
 
