@@ -3,6 +3,8 @@ title: "Test single allele"
 output: html_document
 ---
 
+##Single allele
+
 Testing that the single allele frequency sampler behaves correctly.
 
 
@@ -127,7 +129,64 @@ curve(dbinom(80, 100, x)*sum(h$counts),
       col='blue')
 ```
 
+##Multiple alleles
 
+Checking that things still behave as expected when extending to >1 allele. For simplicity we will test with 2 alleles samplesd at 75 / 100 and 25 / 100.
 
+Execute python code to generate some samples
+
+```{python}
+import os
+os.chdir("..")
+import alleleFreqs as af
+a = af.MultiAllele([75, 25], 0.001)
+out = open("tests/tmp.txt", "w")
+for i in range(0, 10000):
+  out.write('\t'.join([str(x) for x in a.getFreqs()]) + '\n')
+out.close()
+
+```
+
+read in data and clean up
+
+```{r read_freqs_4}
+freqs <- read.table("tmp.txt")
+file.remove("tmp.txt")
+
+```
+
+Plot histograms of simulated frequencies with scaled likelihood curves.
+
+```{r plot_sim_freqs_likes}
+h <- hist(freqs[,1], 
+          breaks = seq(from = 0, to = 1, by = 0.01), 
+          xlim = c(0, 1), 
+          col = colors()[399], 
+          main = "", 
+          xlab = "p")
+
+curve(dbinom(75, 100, x) * sum(h$counts), 
+      from = 0, to = 1, 
+      n = length(h$breaks), 
+      add = T, 
+      col = 'blue', 
+      lwd = 2)
+
+h <- hist(freqs[,2], 
+          breaks = seq(from = 0, to = 1, by = 0.01), 
+          xlim = c(0, 1), 
+          col = colors()[373], 
+          add = T)
+
+curve(dbinom(25, 100, x) * sum(h$counts), 
+      from = 0, to = 1, 
+      n = length(h$breaks), 
+      add = T, 
+      col = colors()[507], 
+      lwd = 2)
+
+```
+
+Looks like we are in good shape!
 
 
