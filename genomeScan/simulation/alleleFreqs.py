@@ -2,6 +2,7 @@ __author__ = 'nick'
 
 import numpy as np
 import scipy.stats as st
+import random
 
 class singleAllele:
 
@@ -46,5 +47,27 @@ class singleAllele:
         return np.random.choice(self.freqSet, p = self.probs)
 
 
+class MultiAllele:
+    '''Simulates allele frequencies for a locus with an arbitrary number of alleles'''
+
+    def __init__(self,
+                 counts,
+                 increment):
+        '''A new MultiAllele object
+
+        counts is a list of observed counts for each llele in a sample incerment in the step size between possible
+        allele frequencies'''
+        tot = sum(counts)
+        self.alleles = [singleAllele(x, tot, increment) for x in counts]
+
+    def getFreqs(self):
+        '''Get a set of allele frequencies'''
+        idx = range(len(self.alleles))
+        random.shuffle(idx)
+        freqs = [0.0 for i in idx]
+        for i in idx[:-1]:
+            freqs[i] = self.alleles[i].getFreq()
+        freqs[idx[-1]] = 1.0 - sum(freqs)
+        return freqs
 
 
