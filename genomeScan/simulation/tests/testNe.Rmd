@@ -1,0 +1,128 @@
+---
+title: "Testing Ne sampling"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+## Background
+
+We estmate effective poulation size using the maximum liklihood method implemented in the *NB* package by Tin-Yu Hui. The package wil give us the log likelihood for a given Ne valuse. This allows us to incorporate uncertaintly about Ne into our simulations. To do this, I wrote a python module "NeGenerator.py" that reads in a tab-separated list of Ne values and log-liklihoods. The modul then samples Ne values in proportion to their liklihoods.
+
+## Setup and lib import
+
+```{r setup}
+library(NB)
+```
+
+## Running NB to get Ne liklihoods
+
+NB can generate an example data set (the data are actually hard-coded) for testing purposes. the example data set has 2 generations scored at 50 loci with 4 alleles earch. Generate some data and use it to estimate Ne and generate a set of log likelihoods.
+
+```{r NB_sampledata}
+NB.example.dataset()
+```
+
+Run assuming sampling at generations 0 and 6. Get the point estimates and plot the liklihood curve
+
+```{r ests}
+NB.estimator(infile = "sample_data.txt", 
+             alleles = rep(4, 50), 
+             sample.interval = c(0,6))
+
+est <- NB.estimator(infile = "sample_data.txt", 
+                         alleles = rep(4, 50), 
+                         sample.interval = c(0,6), 
+                         profile.likelihood = T)
+#NB lables are the wrong way yound on the results of NB.estimator()
+plot(x = est$profile.CI[,1], 
+     y = est$profile.CI[,2],
+     xlab = "N",
+     ylab = "log liklihood",
+     type = 'l')
+
+```
+
+We don't want to use the curve produced by NB.estimator(), because it doesn't give Ne values that are integers. Instead, use the NB.liklihood() function. Cover the 95% confidentce interval.
+
+```{r liks}
+liks <- data.frame(ne = floor(min(est$CI)):ceiling(max(est$CI)))
+liks$loglik <- apply(X = liks, 
+                     MARGIN = 1, 
+                     FUN = NB.likelihood, infile = "sample_data.txt", alleles = rep(4, 50), sample.interval = c(0,6))
+```
+
+Check we have what expect and write out.
+
+```{r sample.logliks}
+plot(liks$ne, liks$loglik, type = 'l')
+write.table(liks, 
+            row.names = F, 
+            col.names = F, 
+            quote = F, 
+            sep = '\t',
+            file = "sample.logliks")
+
+```
+
+## Sampling Ne values
+
+Use the NeGenerator python module to generate samples of NMe  values based on the log liklihoods produced above. the code in NeTester.py is replicate here so it can be run directly from the R notebook
+
+```{python}
+import sys, os
+
+#add parent dir to path so we can import module to test
+sys.path.append(os.getcwd() + "/..")
+
+import NeGenerator as g
+
+gr = g.NeGenerator("sample.logliks")
+
+out = open("generatedNe.txt", "w")
+
+sampleSize = 1000
+
+for x in range(sampleSize):
+    out.write(str(gr.getNe()) + '\n')
+
+out.close()
+```
+
+Read in the generated data and take an initial look at the distribution
+
+```{r sampled.ne}
+sampled.ne <- read.table("generatedNe.txt",
+                         col.names = "ne")
+hist(sampled.ne$ne,
+     col = "steelblue2")
+
+```
+
+How does the distribution of sampled Ne values compare to what we expect, proportional to the likelihoods? Plot Ne the cumulatives sums of the fraction of the total sample or the fraction of the total likelihood.
+
+```{r plot_sample_vs_expect}
+plot(x = sort(sampled.ne$ne), 
+     y = (1:length(sampled.ne$ne))/length(sampled.ne$ne),
+     xlab = "Ne",
+     ylab = "cumulative proportion",
+     type = 'l',
+     lwd = 6)
+
+points(x = liks$ne, 
+       y = cumsum(exp(liks$loglik) / sum(exp(liks$loglik))), 
+       col = "red", 
+       type = 'l',
+       lwd = 4,
+       lty = "dotted")
+
+legend(x = "bottomright", 
+       legend = c("sampled", "expected"), 
+       col = c("black", "red"), 
+       lwd = c(6, 4), 
+       lty = c("solid", "dotted"))
+
+
+```
+
+This appears to be spot on what we are looking for. Hooray!
