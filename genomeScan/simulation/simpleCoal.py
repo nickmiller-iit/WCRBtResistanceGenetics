@@ -53,3 +53,21 @@ class Node:
         Needed to coalesce to another node"""
         return(self.descendentIDs)
         
+class Coalescer:
+    """
+    Sets, runs simulations and returns the results.
+    """
+    
+    def __init__(self,
+                 n,
+                 ploidy,
+                 Ne,
+                 generations):
+        self.sample = np.array([0 for x in range(n * ploidy)]) # new arrray of sample alleles, set to 0
+        self.Ne = Ne
+        self.generations = generations
+        self.nodes = [] # list of nodes
+        for idx in range(n * ploidy): #instantiate nodes with initially one descendent each
+            self.nodes.append(Node(self.sample, np.array([idx])))
+            
+        
